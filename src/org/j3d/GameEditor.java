@@ -172,6 +172,20 @@ public class GameEditor implements org.j3d.Game.GameLoop {
         }
         toggleButtons.get("Rot").setSelected(true);
 
+        buttons.put("ToggleScale", new JButton(
+            new AbstractAction("Toggle Scale") {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    if(game.getScale() == 1) {
+                        game.setScale(4);
+                    } else {
+                        game.setScale(1);
+                    }
+                }
+            })
+        );
+        topPanel.add(buttons.get("ToggleScale"));
+
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
         buttons.put("AddScene", new JButton(

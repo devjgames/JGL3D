@@ -3,7 +3,6 @@ package org.j3d;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 
-import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.AWTGLCanvas;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
@@ -13,7 +12,6 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.nio.IntBuffer;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -189,14 +187,15 @@ public final class Game {
     private Game me;
     private boolean takeSnapShot = false;
     private AWTGLCanvas canvas;
-    private IntBuffer pixels = null;
+    private Texture pixels = null;
     private int lw = 0;
     private int lh = 0;
     private int scale;
+    private int newScale;
 
     public Game(int scale, GameLoop loop) throws Exception {
         me = this;
-        this.scale = scale;
+        this.scale = newScale = scale;
         for (int i = 0; i != keyState.length; i++) {
             keyState[i] = false;
         }
@@ -205,6 +204,10 @@ public final class Game {
             @Override
             protected void initGL() {
                 try {
+                    makeCurrent();
+
+                    System.out.println("OpenGL version = " + GL11.glGetString(GL11.GL_VERSION));
+
                     loop.init(me);
                 } catch(Exception ex) {
                     ex.printStackTrace(System.out);
@@ -214,33 +217,40 @@ public final class Game {
             @Override
             protected void paintGL() {
                 try {
+                    makeCurrent();
                     
                     int w = getWidth();
                     int h = getHeight();
+                    int scale = me.scale;
 
-                    if(w > 20 && h > 20 && (lw != w || lh != h)) {
+                    if(w > 20 && h > 20 && (lw != w || lh != h || newScale != scale)) {
+                        me.scale = scale = newScale;
                         System.out.println("creating pixel buffer ... " + w / scale + " x " + h /scale);
                         lw = w;
                         lh = h;
-                        pixels = BufferUtils.createIntBuffer((w / scale) * (h / scale));
+                        if(pixels != null) {
+                            pixels.destroy();
+                        }
+                        pixels = new Texture(w / scale, h / scale, null, null);
                     }
 
-                    makeCurrent();
                     GL11.glViewport(0, 0, w / scale, h / scale);
                     loop.render(me);
                     if(scale > 1 || takeSnapShot) {
-                        pixels.limit(pixels.capacity());
-                        pixels.position(0);
+                        pixels.buf.limit(pixels.buf.capacity());
+                        pixels.buf.position(0);
                         GL11.glRasterPos2i(0, 0);
-                        GL11.glReadPixels(0, 0, w / scale, h / scale, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
-                        pixels.limit(pixels.capacity());
-                        pixels.position(0);
+                        GL11.glReadPixels(0, 0, w / scale, h / scale, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels.buf);
+                        pixels.buffer();
+                        pixels.buf.limit(pixels.buf.capacity());
+                        pixels.buf.position(0);
                         GL11.glViewport(0, 0, w, h);
                         GL11.glDisable(GL11.GL_LIGHTING);
                         GL13.glActiveTexture(GL13.GL_TEXTURE1);
                         GL11.glDisable(GL11.GL_TEXTURE_2D);
                         GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                        GL11.glDisable(GL11.GL_TEXTURE_2D);
+                        GL11.glEnable(GL11.GL_TEXTURE_2D);
+                        GL11.glBindTexture(GL11.GL_TEXTURE_2D, pixels.id);
                         GL11.glDisable(GL11.GL_DEPTH_TEST);
                         GL11.glDepthMask(false);
                         GL11.glDisable(GL11.GL_CULL_FACE);
@@ -249,12 +259,19 @@ public final class Game {
                         GL11.glLoadIdentity();
                         GL11.glMatrixMode(GL11.GL_PROJECTION);
                         GL11.glLoadIdentity();
-                        GL11.glOrtho(0, w, 0, h, -1, 1);
+                        GL11.glOrtho(0, w, h, 0, -1, 1);
                         GL11.glColor4f(1, 1, 1, 1);
-                        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
-                        GL11.glRasterPos2i(0, 0);
-                        GL11.glPixelZoom(scale, scale);
-                        GL11.glDrawPixels(w / scale, h / scale, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
+                        GL11.glBegin(GL11.GL_QUADS);
+                        GL13.glMultiTexCoord2f(GL13.GL_TEXTURE0, 0, 1);
+                        GL11.glVertex2f(0, 0);
+                        GL13.glMultiTexCoord2f(GL13.GL_TEXTURE0, 0, 0);
+                        GL11.glVertex2f(0, h);
+                        GL13.glMultiTexCoord2f(GL13.GL_TEXTURE0, 1, 0);
+                        GL11.glVertex2f(w, h);
+                        GL13.glMultiTexCoord2f(GL13.GL_TEXTURE0, 1, 1);
+                        GL11.glVertex2f(w, 0);
+                        GL11.glEnd();
+                        GL11.glDisable(GL11.GL_TEXTURE_2D);
                     }
                     checkError("paintGL");
                     GL11.glFlush();
@@ -273,18 +290,18 @@ public final class Game {
                             int[] pls = new int[(w / scale) * (h / scale)];
 
                             for(int i = 0; i != pls.length; i++) {
-                                int p = pixels.get(i);
+                                int p = pixels.buf.get(i);
 
                                 pls[i] = (p & 0xFF000000) | (((p & 0xFF) << 16) & 0xFF0000) | (p & 0xFF00) | ((p >> 16) & 0xFF);
                             }
-                            snapShot.setRGB(0, 0, w, h, pls, 0, w);
+                            snapShot.setRGB(0, 0, w / scale, h / scale, pls, 0, w / scale);
 
-                            BufferedImage flip = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                            BufferedImage flip = new BufferedImage(w / scale, h / scale, BufferedImage.TYPE_INT_ARGB);
                             Graphics g = null;
 
                             try {
                                 g = flip.createGraphics();
-                                g.drawImage(snapShot, 0, h, w, -h, null);
+                                g.drawImage(snapShot, 0, h / scale, w /scale, -h / scale, null);
                             } finally {
                                 if(g != null) {
                                     g.dispose();
@@ -308,6 +325,14 @@ public final class Game {
         canvas.addMouseListener(new Listener());
         canvas.addMouseMotionListener(new Listener());
         canvas.addKeyListener(new Listener());
+    }
+
+    public int getScale() {
+        return scale;
+    }
+
+    public void setScale(int scale) {
+        newScale = Math.max(1, Math.min(4, scale));
     }
 
     public AWTGLCanvas getCanvas() {
@@ -383,7 +408,7 @@ public final class Game {
         GL11.glEnd();
     }
 
-    private void blit(Texture texture, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh) {
+    public void blit(Texture texture, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh) {
         GL13.glMultiTexCoord2f(GL13.GL_TEXTURE0, sx / (float)texture.w, sy / (float)texture.h);
         GL11.glVertex2f(dx, dy);
         GL13.glMultiTexCoord2f(GL13.GL_TEXTURE0, sx / (float)texture.w, (sy + sh) / (float)texture.h);
