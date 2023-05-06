@@ -621,7 +621,7 @@ public class GameEditor implements org.j3d.Game.GameLoop {
             map = false;
 
             try {
-                mapper.light(file, scene.lightMapWidth, scene.lightMapHeight, game, scene, true);
+                mapper.light(file, game, scene, true);
             } catch(Exception ex) {
                 ex.printStackTrace(System.out);
             }
